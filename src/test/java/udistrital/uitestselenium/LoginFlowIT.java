@@ -39,7 +39,7 @@ class LoginFlowIT {
     @Test
     @DisplayName("Successful credentials navigate to the welcome page")
     void userCanAuthenticateWithKnownCredentials() {
-        driver.get(baseUrl + "/index.jsp");
+        driver.get(baseUrl);
 
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(5));
 
@@ -58,7 +58,7 @@ class LoginFlowIT {
         WebElement welcomeHeading = wait.until(
                 ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".welcome-card h1")));
 
-        wait.until(ExpectedConditions.urlContains("/welcome.jsp"));
+        wait.until(ExpectedConditions.urlContains("/login"));
         String headingText = welcomeHeading.getText();
         org.junit.jupiter.api.Assertions.assertTrue(headingText.contains("user@example.com"),
                 "Expected heading to contain the authenticated email, but was: " + headingText);
