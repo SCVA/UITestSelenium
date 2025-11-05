@@ -63,17 +63,20 @@ class LoginFlowIT {
     void userCanAuthenticateWithKnownCredentials() {
         driver.get(baseUrl + "/index.jsp");
 
-        WebElement emailField = driver.findElement(By.name("email"));
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(5));
+
+        WebElement emailField = wait
+                .until(ExpectedConditions.elementToBeClickable(By.name("email")));
         emailField.clear();
         emailField.sendKeys("user@example.com");
 
-        WebElement passwordField = driver.findElement(By.name("password"));
+        WebElement passwordField = wait
+                .until(ExpectedConditions.elementToBeClickable(By.name("password")));
         passwordField.clear();
         passwordField.sendKeys("password123");
 
         passwordField.submit();
 
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(5));
         WebElement welcomeHeading = wait.until(
                 ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".welcome-card h1")));
 
