@@ -1,4 +1,6 @@
-package udistrital.web;
+package udistrital.uitestselenium;
+
+
 
 import java.io.IOException;
 import java.util.Collections;
