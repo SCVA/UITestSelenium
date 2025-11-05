@@ -151,7 +151,7 @@ class LoginFlowIT {
     @Test
     @DisplayName("Successful credentials navigate to the welcome page")
     void userCanAuthenticateWithKnownCredentials() {
-        driver.get(baseUrl);
+        driver.get(baseUrl + "/index.jsp");
 
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(5));
 
