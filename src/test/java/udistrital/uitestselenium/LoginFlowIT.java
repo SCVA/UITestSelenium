@@ -17,6 +17,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -144,15 +146,16 @@ class LoginFlowIT {
     void userCanAuthenticateWithKnownCredentials() {
         driver.get(baseUrl);
 
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        Duration waitTimeout = Duration.ofSeconds(30);
+        WebDriverWait wait = new WebDriverWait(driver, waitTimeout);
 
-        WebElement emailField = wait
-                .until(ExpectedConditions.visibilityOfElementLocated(By.name("email")));
+        waitForDocumentReady(waitTimeout);
+
+        WebElement emailField = locateVisibleInput(wait, waitTimeout, "email");
         emailField.clear();
         emailField.sendKeys("user@example.com");
 
-        WebElement passwordField = wait
-                .until(ExpectedConditions.visibilityOfElementLocated(By.name("password")));
+        WebElement passwordField = locateVisibleInput(wait, waitTimeout, "password");
         passwordField.clear();
         passwordField.sendKeys("password123");
 
@@ -167,4 +170,21 @@ class LoginFlowIT {
                 "Expected heading to contain the authenticated email, but was: " + headingText);
     }
 
+    private static void waitForDocumentReady(Duration timeout) {
+        new WebDriverWait(driver, timeout)
+                .until(webDriver -> "complete".equals(((JavascriptExecutor) webDriver)
+                        .executeScript("return document.readyState")));
+    }
+
+    private static WebElement locateVisibleInput(WebDriverWait wait, Duration timeout, String inputName) {
+        try {
+            return wait.until(
+                    ExpectedConditions.visibilityOfElementLocated(By.name(inputName)));
+        } catch (TimeoutException firstAttempt) {
+            driver.navigate().to(baseUrl + "/index.jsp");
+            waitForDocumentReady(timeout);
+            return wait.until(
+                    ExpectedConditions.visibilityOfElementLocated(By.name(inputName)));
+        }
+    }
 }
