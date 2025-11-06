@@ -21,6 +21,7 @@ import org.eclipse.jetty.apache.jsp.JettyJasperInitializer;
 import org.eclipse.jetty.plus.webapp.EnvConfiguration;
 import org.eclipse.jetty.plus.webapp.PlusConfiguration;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.DefaultServlet;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.webapp.Configuration;
@@ -53,10 +54,8 @@ class LoginFlowIT {
 
     @BeforeAll
     static void setUpSuite() throws Exception {
-        baseUrl = "http://localhost:8080/UITestSelenium";
-
-        startJetty();
-        waitForServerReadiness();
+        baseUrl = startJetty();
+        waitForServerReadiness(baseUrl);
 
         String chromeDriverPath = System.getenv("CHROMEDRIVER_PATH");
         if (chromeDriverPath != null && !chromeDriverPath.isEmpty()) {
@@ -65,7 +64,16 @@ class LoginFlowIT {
             WebDriverManager.chromedriver().setup();
         }
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless=new", "--no-sandbox", "--disable-dev-shm-usage");
+        options.addArguments(
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--proxy-server=direct://",
+                "--proxy-bypass-list=*",
+                "--remote-allow-origins=*",
+                "--window-size=1920,1080",
+                "--allow-insecure-localhost");
         String chromeBinary = System.getenv("CHROME_PATH");
         if (chromeBinary != null && !chromeBinary.isEmpty()) {
             options.setBinary(chromeBinary);
@@ -100,8 +108,13 @@ class LoginFlowIT {
         }
     }
 
-    private static void startJetty() throws Exception {
-        server = new Server(8080);
+    private static String startJetty() throws Exception {
+        server = new Server();
+
+        ServerConnector connector = new ServerConnector(server);
+        connector.setHost("127.0.0.1");
+        connector.setPort(0);
+        server.addConnector(connector);
 
         WebAppContext context = new WebAppContext();
         context.setContextPath("/UITestSelenium");
@@ -153,6 +166,12 @@ class LoginFlowIT {
 
         server.setHandler(context);
         server.start();
+
+        int port = connector.getLocalPort();
+        if (port <= 0) {
+            throw new IllegalStateException("Unable to determine Jetty server port");
+        }
+        return "http://127.0.0.1:" + port + "/UITestSelenium";
     }
 
     @Test
@@ -189,13 +208,12 @@ class LoginFlowIT {
                 "Expected heading to contain the authenticated email, but was: " + headingText);
     }
 
-    private static void waitForServerReadiness() throws InterruptedException {
+    private static void waitForServerReadiness(String serverBaseUrl) throws InterruptedException {
         URL healthUrl;
         try {
-            healthUrl = new URL(baseUrl + "/index.jsp");
+            healthUrl = new URL(serverBaseUrl + "/index.jsp");
         } catch (IOException ex) {
-            System.err.println("WARN: Unable to build Jetty health-check URL: " + ex.getMessage());
-            return;
+            throw new IllegalStateException("Unable to build Jetty health-check URL", ex);
         }
 
         long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
@@ -240,18 +258,18 @@ class LoginFlowIT {
             Thread.sleep(Duration.ofMillis(500).toMillis());
         }
 
+        StringBuilder message = new StringBuilder("Embedded Jetty readiness probe failed to detect the login page");
+        if (lastStatus != null) {
+            message.append(". Last HTTP status: ").append(lastStatus);
+        }
         if (lastException != null) {
-            System.err.println("WARN: Embedded Jetty readiness probe failed after retries: "
-                    + lastException.getMessage());
-        } else if (lastStatus != null) {
-            System.err.println("WARN: Embedded Jetty readiness probe ended with HTTP status " + lastStatus);
-        } else {
-            System.err.println("WARN: Embedded Jetty readiness probe timed out without a response");
+            message.append(". Last error: ").append(lastException.getMessage());
+        }
+        if (lastBodySnippet != null) {
+            message.append("\nLast response body snippet:\n").append(lastBodySnippet);
         }
 
-        if (lastBodySnippet != null) {
-            System.err.println("Last response body snippet:\n" + lastBodySnippet);
-        }
+        throw new IllegalStateException(message.toString(), lastException);
     }
 
     private static String readBody(HttpURLConnection connection, int responseCode) throws IOException {
