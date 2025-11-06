@@ -1,7 +1,14 @@
 package udistrital.uitestselenium;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
+import io.github.bonigarcia.wdm.config.WebDriverManagerException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.webapp.WebAppContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -18,12 +25,21 @@ class LoginFlowIT {
 
     private static WebDriver driver;
     private static String baseUrl;
+    private static Server server;
+    private static Path scratchDirectory;
 
     @BeforeAll
-    static void setUpSuite() {
+    static void setUpSuite() throws Exception {
         baseUrl = "http://localhost:8080/UITestSelenium";
 
-        WebDriverManager.chromedriver().setup();
+        server = startJetty();
+
+        try {
+            WebDriverManager.chromedriver().setup();
+        } catch (WebDriverManagerException ex) {
+            // Fallback to Selenium Manager when WebDriverManager cannot reach
+            // the driver repository (e.g. behind a proxy).
+        }
         ChromeOptions options = new ChromeOptions();
         options.addArguments("--headless=new", "--no-sandbox", "--disable-dev-shm-usage");
         driver = new ChromeDriver(options);
@@ -34,6 +50,58 @@ class LoginFlowIT {
         if (driver != null) {
             driver.quit();
         }
+        if (server != null) {
+            try {
+                server.stop();
+            } catch (Exception ignored) {
+                // Best effort to stop Jetty between tests.
+            }
+        }
+        if (scratchDirectory != null) {
+            try (java.util.stream.Stream<Path> paths = Files.walk(scratchDirectory)) {
+                paths.sorted((left, right) -> right.compareTo(left))
+                        .forEach(path -> {
+                            try {
+                                Files.deleteIfExists(path);
+                            } catch (IOException ignored) {
+                                // Ignore deletion issues during cleanup.
+                            }
+                        });
+            } catch (IOException ignored) {
+                // Ignore cleanup issues.
+            }
+        }
+    }
+
+    private static Server startJetty() throws Exception {
+        Server localServer = new Server(8080);
+
+        WebAppContext webAppContext = new WebAppContext();
+        webAppContext.setContextPath("/UITestSelenium");
+        webAppContext.setResourceBase(resolveWebAppResourceBase());
+        webAppContext.setParentLoaderPriority(true);
+        webAppContext.setWelcomeFiles(new String[] {"index.jsp"});
+        webAppContext.setAttribute(
+                "org.eclipse.jetty.server.webapp.ContainerIncludeJarPattern",
+                ".*/[^/]*taglibs.*\\.jar$|.*/[^/]*jsp.*\\.jar$");
+
+        scratchDirectory = Files.createTempDirectory("jetty-jsp");
+        webAppContext.setTempDirectory(scratchDirectory.toFile());
+        webAppContext.setAttribute("javax.servlet.context.tempdir", scratchDirectory);
+
+        localServer.setHandler(webAppContext);
+        localServer.start();
+
+        return localServer;
+    }
+
+    private static String resolveWebAppResourceBase() throws IOException {
+        Path projectRoot = Paths.get("").toAbsolutePath();
+        Path webAppPath = projectRoot.resolve(Paths.get("src", "main", "webapp"));
+        if (!Files.exists(webAppPath)) {
+            throw new IOException("Could not locate web application resources at " + webAppPath);
+        }
+        return webAppPath.toString();
     }
 
     @Test
