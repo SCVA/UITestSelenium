@@ -21,7 +21,7 @@ class LoginFlowIT {
 
     @BeforeAll
     static void setUpSuite() {
-        baseUrl = "http://localhost:8080/UITestSelenium";
+        baseUrl = "https://unprecipitatively-winiest-wyatt.ngrok-free.dev/UITestSelenium"; //"http://localhost:8080/UITestSelenium";
 
         WebDriverManager.chromedriver().setup();
         ChromeOptions options = new ChromeOptions();
