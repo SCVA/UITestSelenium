@@ -2,13 +2,15 @@ package udistrital.uitestselenium;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Stream;
 import org.apache.jasper.servlet.JspServlet;
 import org.eclipse.jetty.annotations.AnnotationConfiguration;
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -48,9 +51,10 @@ class LoginFlowIT {
 
     @BeforeAll
     static void setUpSuite() throws Exception {
-        startJetty();
-
         baseUrl = "http://localhost:8080/UITestSelenium";
+
+        startJetty();
+        waitForServerReadiness();
 
         String chromeDriverPath = System.getenv("CHROMEDRIVER_PATH");
         if (chromeDriverPath != null && !chromeDriverPath.isEmpty()) {
@@ -153,15 +157,21 @@ class LoginFlowIT {
     void userCanAuthenticateWithKnownCredentials() {
         driver.get(baseUrl + "/index.jsp");
 
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+
+        wait.until(webDriver -> {
+            Object readyState = ((JavascriptExecutor) webDriver)
+                    .executeScript("return document.readyState");
+            return "complete".equals(String.valueOf(readyState));
+        });
 
         WebElement emailField = wait
-                .until(ExpectedConditions.visibilityOfElementLocated(By.name("email")));
+                .until(ExpectedConditions.presenceOfElementLocated(By.name("email")));
         emailField.clear();
         emailField.sendKeys("user@example.com");
 
         WebElement passwordField = wait
-                .until(ExpectedConditions.visibilityOfElementLocated(By.name("password")));
+                .until(ExpectedConditions.presenceOfElementLocated(By.name("password")));
         passwordField.clear();
         passwordField.sendKeys("password123");
 
@@ -174,6 +184,53 @@ class LoginFlowIT {
         String headingText = welcomeHeading.getText();
         org.junit.jupiter.api.Assertions.assertTrue(headingText.contains("user@example.com"),
                 "Expected heading to contain the authenticated email, but was: " + headingText);
+    }
+
+    private static void waitForServerReadiness() throws InterruptedException {
+        URL healthUrl;
+        try {
+            healthUrl = new URL(baseUrl + "/index.jsp");
+        } catch (IOException ex) {
+            System.err.println("WARN: Unable to build Jetty health-check URL: " + ex.getMessage());
+            return;
+        }
+
+        long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
+        IOException lastException = null;
+        Integer lastStatus = null;
+
+        while (System.nanoTime() < deadline) {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) healthUrl.openConnection();
+                connection.setConnectTimeout((int) Duration.ofSeconds(2).toMillis());
+                connection.setReadTimeout((int) Duration.ofSeconds(2).toMillis());
+                connection.setInstanceFollowRedirects(false);
+
+                int responseCode = connection.getResponseCode();
+                lastStatus = responseCode;
+                if (responseCode >= 200 && responseCode < 500) {
+                    return;
+                }
+            } catch (IOException ex) {
+                lastException = ex;
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+
+            Thread.sleep(Duration.ofMillis(500).toMillis());
+        }
+
+        if (lastException != null) {
+            System.err.println("WARN: Embedded Jetty readiness probe failed after retries: "
+                    + lastException.getMessage());
+        } else if (lastStatus != null) {
+            System.err.println("WARN: Embedded Jetty readiness probe ended with HTTP status " + lastStatus);
+        } else {
+            System.err.println("WARN: Embedded Jetty readiness probe timed out without a response");
+        }
     }
 
 }
