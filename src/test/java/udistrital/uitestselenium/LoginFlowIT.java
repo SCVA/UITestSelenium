@@ -3,6 +3,9 @@ package udistrital.uitestselenium;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import io.github.bonigarcia.wdm.config.WebDriverManagerException;
 import java.io.IOException;
+import java.net.BindException;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -32,7 +35,15 @@ class LoginFlowIT {
     static void setUpSuite() throws Exception {
         baseUrl = "http://localhost:8080/UITestSelenium";
 
-        server = startJetty();
+        try {
+            server = startJetty();
+        } catch (BindException ex) {
+            // When the preferred port is already in use we assume an external
+            // container (e.g. XAMPP) is exposing the application locally.
+            server = null;
+        }
+
+        waitForApplication();
 
         try {
             WebDriverManager.chromedriver().setup();
@@ -102,6 +113,30 @@ class LoginFlowIT {
             throw new IOException("Could not locate web application resources at " + webAppPath);
         }
         return webAppPath.toString();
+    }
+
+    private static void waitForApplication() throws InterruptedException, IOException {
+        IOException lastFailure = null;
+        for (int attempt = 0; attempt < 30; attempt++) {
+            try {
+                HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl).openConnection();
+                connection.setConnectTimeout(2000);
+                connection.setReadTimeout(2000);
+                connection.setInstanceFollowRedirects(false);
+                int status = connection.getResponseCode();
+                connection.disconnect();
+                if (status >= 200 && status < 500) {
+                    return;
+                }
+            } catch (IOException ex) {
+                lastFailure = ex;
+            }
+            Thread.sleep(1000);
+        }
+        if (lastFailure != null) {
+            throw lastFailure;
+        }
+        throw new IOException("Application at " + baseUrl + " did not become available in time");
     }
 
     @Test
