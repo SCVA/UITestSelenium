@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -123,7 +124,7 @@ class LoginFlowIT {
         context.setResourceBase(webAppDir.toString());
         context.setInitParameter("org.eclipse.jetty.servlet.Default.dirAllowed", "false");
         context.setWelcomeFiles(new String[]{"index.jsp"});
-        context.setParentLoaderPriority(true);
+        context.setParentLoaderPriority(false);
 
         jettyTempDir = Files.createTempDirectory("jetty-embedded-");
         context.setAttribute("javax.servlet.context.tempdir", jettyTempDir.toFile());
@@ -142,7 +143,9 @@ class LoginFlowIT {
             new JettyWebXmlConfiguration()
         });
 
-        context.setClassLoader(Thread.currentThread().getContextClassLoader());
+        ClassLoader jspClassLoader = new URLClassLoader(new URL[0],
+                LoginFlowIT.class.getClassLoader());
+        context.setClassLoader(jspClassLoader);
 
         List<ContainerInitializer> initializers = new ArrayList<>();
         initializers.add(new ContainerInitializer(new JettyJasperInitializer(), null));
@@ -156,8 +159,6 @@ class LoginFlowIT {
         jsp.setInitParameter("compilerTargetVM", "1.8");
         jsp.setInitParameter("compilerSourceVM", "1.8");
         jsp.setInitParameter("keepgenerated", "false");
-        jsp.setInitParameter("classpath",
-                System.getProperty("java.class.path"));
         context.addServlet(jsp, "*.jsp");
 
         ServletHolder defaultServlet = new ServletHolder("default", DefaultServlet.class);
