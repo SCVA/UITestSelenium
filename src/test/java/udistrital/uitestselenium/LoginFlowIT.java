@@ -2,8 +2,10 @@ package udistrital.uitestselenium;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -107,6 +109,7 @@ class LoginFlowIT {
         Path webAppDir = Paths.get("src", "main", "webapp").toAbsolutePath();
         context.setResourceBase(webAppDir.toString());
         context.setInitParameter("org.eclipse.jetty.servlet.Default.dirAllowed", "false");
+        context.setWelcomeFiles(new String[]{"index.jsp"});
         context.setParentLoaderPriority(true);
 
         jettyTempDir = Files.createTempDirectory("jetty-embedded-");
@@ -198,6 +201,7 @@ class LoginFlowIT {
         long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
         IOException lastException = null;
         Integer lastStatus = null;
+        String lastBodySnippet = null;
 
         while (System.nanoTime() < deadline) {
             HttpURLConnection connection = null;
@@ -209,7 +213,20 @@ class LoginFlowIT {
 
                 int responseCode = connection.getResponseCode();
                 lastStatus = responseCode;
-                if (responseCode >= 200 && responseCode < 500) {
+
+                String body = null;
+                try {
+                    body = readBody(connection, responseCode);
+                } catch (IOException bodyReadException) {
+                    lastException = bodyReadException;
+                }
+
+                if (body != null && !body.isEmpty()) {
+                    lastBodySnippet = body.length() > 512 ? body.substring(0, 512) : body;
+                }
+
+                if (responseCode >= 200 && responseCode < 300
+                        && body != null && body.contains("name=\"email\"")) {
                     return;
                 }
             } catch (IOException ex) {
@@ -230,6 +247,23 @@ class LoginFlowIT {
             System.err.println("WARN: Embedded Jetty readiness probe ended with HTTP status " + lastStatus);
         } else {
             System.err.println("WARN: Embedded Jetty readiness probe timed out without a response");
+        }
+
+        if (lastBodySnippet != null) {
+            System.err.println("Last response body snippet:\n" + lastBodySnippet);
+        }
+    }
+
+    private static String readBody(HttpURLConnection connection, int responseCode) throws IOException {
+        try (InputStream stream = responseCode >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
+            if (stream == null) {
+                return null;
+            }
+            byte[] bytes = stream.readAllBytes();
+            if (bytes.length == 0) {
+                return null;
+            }
+            return new String(bytes, StandardCharsets.UTF_8);
         }
     }
 
